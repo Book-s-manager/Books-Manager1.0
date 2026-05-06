@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
 import uuid
+import random
 
 app = FastAPI(title="Book's Manager", version="1.0.0")
 
@@ -73,7 +74,7 @@ def encontrar_livro(id: str) -> Livro:
 def raiz():
     return {"mensagem": "Gerenciador de Livros funcionando! 😊💕"}
 
-@app.post("/usuario", response_model=Usuario, status_code=201)
+@app.post("/usuarios", response_model=Usuario, status_code=201)
 def criar_usuario(dados: UsuarioEntrada):
     novo = Usuario(id=str(uuid.uuid4()), estantePessoal=[], **dados.model_dump())
     usuarios_db.append(novo)
@@ -181,6 +182,26 @@ def avaliar_livro(usuario_id: str, livro_id: str, dados: AvaliacaoEntrada):
             return {"mensagem": "Avaliação registrada!", "livro": livro.titulo}
         
     raise HTTPException(status_code=404, detail="Livro não encontrado na estante deste usuário.")
+
+# ═══════════════════  Sorteio de Leitura ═════════════════
+
+@app.get("/usuarios/{usuario_id}/sorteio")
+def sortear_livro(usuario_id: str):
+    usuario = encontrar_usuario(usuario_id)
+
+    livros_sorteio = [l for l in livros_db if l.classificacao.lower() == "quero ler"]
+    if not livros_sorteio:
+        raise HTTPException(
+            status_code=404, 
+            detail="Não encontramos livros com status 'quero ler' no catálogo."
+        )
+    escolhido = random.choice(livros_sorteio)
+    return {
+        "sugestao": escolhido.titulo,
+        "autor": escolhido.autor,
+        "genero": escolhido.genero,
+        "mensagem": "🎲 O dado caiu neste livro! Que tal começar a leitura?"
+    }
 
 # ═══════════════════ MATRÍCULAS ═══════════════════
 
