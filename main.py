@@ -68,7 +68,7 @@ def encontrar_livro(id: str) -> Livro:
             return l
     raise HTTPException(status_code=404, detail="Livro não encontrado")
 
-# ═══════════════════ Usuário - cadastro e gerenciamento ═══════════════════
+# ═══════════════════ Usuário - cadastro, edição e mais ═══════════════════
 
 @app.get("/")
 def raiz():
@@ -105,7 +105,7 @@ def remover_usuario(id: str):
             return
     raise HTTPException(status_code=404, detail="Usuario não encontrado")
 
-# ═══════════════════ Livros - criar, vincular a estante, editar e outras funções ═══════════════════
+# ═══════════════════ Livros - criar e vincular a estante, editar e outras funções ═══════════════════
 
 @app.post("/usuarios/{usuario_id}/livros", response_model=Livro, status_code=201)
 def criar_e_vincular_livro(usuario_id: str, dados: LivroEntrada):
@@ -203,87 +203,33 @@ def sortear_livro(usuario_id: str):
         "mensagem": "🎲 O dado caiu neste livro! Que tal começar a leitura?"
     }
 
-# ═══════════════════ MATRÍCULAS ═══════════════════
 
-# @app.post("/matriculas", response_model=Matricula, status_code=201)
-# def matricular_aluno(dados: MatriculaEntrada):
-#     encontrar_aluno(dados.aluno_id)
-#     encontrar_disciplina(dados.disciplina_id)
-#     for m in matriculas_db:
-#         if m.aluno_id == dados.aluno_id and m.disciplina_id == dados.disciplina_id:
-#             raise HTTPException(status_code=409, detail="Aluno já matriculado nesta disciplina")
-#     nova = Matricula(id=str(uuid.uuid4()), **dados.model_dump())
-#     matriculas_db.append(nova)
-#     return nova
+# ═════════════ DASHBOARD  ═════════════
 
-# @app.get("/alunos/{id}/disciplinas", response_model=List[Disciplina])
-# def disciplinas_do_aluno(id: str):
-#     encontrar_aluno(id)
-#     ids_disc = {m.disciplina_id for m in matriculas_db if m.aluno_id == id}
-#     return [d for d in disciplinas_db if d.id in ids_disc]
 
-# @app.get("/disciplinas/{id}/alunos", response_model=List[Aluno])
-# def alunos_da_disciplina(id: str):
-#     encontrar_disciplina(id)
-#     ids_alunos = {m.aluno_id for m in matriculas_db if m.disciplina_id == id}
-#     return [a for a in alunos_db if a.id in ids_alunos]
+@app.get("/usuarios/{usuario_id}/dashboard")
+def exibir_dashboard(usuario_id: str):
+    usuario = encontrar_usuario(usuario_id)
+    
+    total_livros = len(usuario.estantePessoal)
+    
+    total_paginas = sum(livro.numeroPaginas for livro in usuario.estantePessoal)
+    
+    lidos = [l for l in usuario.estantePessoal if l.classificacao.lower() == "lido"]
+    lendo = [l for l in usuario.estantePessoal if l.classificacao.lower() == "lendo"]
 
-# @app.delete("/matriculas/{id}", status_code=204)
-# def cancelar_matricula(id: str):
-#     for i, m in enumerate(matriculas_db):
-#         if m.id == id:
-#             matriculas_db.pop(i)
-#             return
-#     raise HTTPException(status_code=404, detail="Matrícula não encontrada")
+    mensagem = "Comece sua jornada de leitura! 📖"
+    if total_livros > 0:
+        porcentagem_concluida = (len(lidos) / total_livros) * 100
+        mensagem = f"Você já concluiu {porcentagem_concluida:.1f}% da sua estante!"
 
-# # ═══════════════════ INFRAÇÕES ═══════════════════
-
-# @app.post("/infracoes", response_model=Infracao, status_code=201)
-# def registrar_infracao(dados: InfracaoEntrada):
-#     encontrar_aluno(dados.aluno_id)
-#     encontrar_disciplina(dados.disciplina_id)
-#     nova = Infracao(
-#         id=str(uuid.uuid4()),
-#         data=datetime.now().isoformat(),
-#         **dados.model_dump()
-#     )
-#     infracoes_db.append(nova)
-#     return nova
-
-# @app.get("/infracoes", response_model=List[Infracao])
-# def listar_infracoes():
-#     return infracoes_db
-
-# @app.get("/infracoes/{id}", response_model=Infracao)
-# def buscar_infracao(id: str):
-#     for inf in infracoes_db:
-#         if inf.id == id:
-#             return inf
-#     raise HTTPException(status_code=404, detail="Infração não encontrada")
-
-# @app.get("/alunos/{id}/infracoes", response_model=List[Infracao])
-# def infracoes_do_aluno(id: str):
-#     encontrar_aluno(id)
-#     return [inf for inf in infracoes_db if inf.aluno_id == id]
-
-# @app.get("/disciplinas/{id}/infracoes", response_model=List[Infracao])
-# def infracoes_da_disciplina(id: str):
-#     encontrar_disciplina(id)
-#     return [inf for inf in infracoes_db if inf.disciplina_id == id]
-
-# @app.put("/infracoes/{id}", response_model=Infracao)
-# def editar_infracao(id: str, dados: InfracaoEntrada):
-#     for i, inf in enumerate(infracoes_db):
-#         if inf.id == id:
-#             atualizada = Infracao(id=id, data=inf.data, **dados.model_dump())
-#             infracoes_db[i] = atualizada
-#             return atualizada
-#     raise HTTPException(status_code=404, detail="Infração não encontrada")
-
-# @app.delete("/infracoes/{id}", status_code=204)
-# def remover_infracao(id: str):
-#     for i, inf in enumerate(infracoes_db):
-#         if inf.id == id:
-#             infracoes_db.pop(i)
-#             return
-#     raise HTTPException(status_code=404, detail="Infração não encontrada")
+    return {
+        "usuario": usuario.nome,
+        "estatisticas": {
+            "total_na_estante": total_livros,
+            "livros_concluidos": len(lidos),
+            "lendo_atualmente": len(lendo),
+            "paginas_totais": total_paginas
+        },
+        "feedback": mensagem
+    }
