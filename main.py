@@ -7,46 +7,21 @@ from typing import List, Optional
 from datetime import datetime
 import uuid
 import random
+from contextlib import asynccontextmanager
+from models import *
 
-app = FastAPI(title="Book's Manager", version="1.0.0")
+from database import get_conn, init_db
 
-# ═══════════════════ MODELOS ═══════════════════
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Executado na inicialização: cria tabelas se não existirem
+    init_db()
+    yield
+    # Executado no encerramento (se necessário)
 
 
+app = FastAPI(title="Book's Manager", version="2.0.0", lifespan="lifespan")
 
-class LivroEntrada(BaseModel):
-    titulo: str
-    autor: str
-    numeroPaginas: int
-    genero: str
-    classificacao: str
-
-class Livro(LivroEntrada):
-    id: str
-    nota: Optional[int] = None
-    resenha: Optional[str] = None
-
-class ProgressoLivroEntrada(BaseModel):
-    comentario:str
-    paginas_lidas: int
-
-class ProgressoLivro(ProgressoLivroEntrada):
-    id: str
-    data: datetime =datetime.now()
-    livro_id: str
-
-class UsuarioEntrada(BaseModel):
-    nome: str
-    email: str
-    senha: str
-
-class Usuario(UsuarioEntrada):
-    id: str
-    estantePessoal: List[Livro] = []
-
-class AvaliacaoEntrada(BaseModel):
-    nota: int
-    resenha: str
 
 # ═══════════════════ DADOS EM MEMÓRIA ═══════════════════
 
