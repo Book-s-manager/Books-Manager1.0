@@ -10,10 +10,14 @@ class LivroEntrada(BaseModel):
     autor: str
     numeroPaginas: int
     genero: str
-    classificacao: str
 
 class Livro(LivroEntrada):
     id: str
+    nota: Optional[int] = None
+    resenha: Optional[str] = None
+
+class VinculoLivro(LivroEntrada):
+    classificacao: str
     nota: Optional[int] = None
     resenha: Optional[str] = None
 
@@ -24,7 +28,7 @@ class ProgressoLivroEntrada(BaseModel):
 class ProgressoLivro(ProgressoLivroEntrada):
     id: str
     data: datetime =datetime.now()
-    livro_id: str
+    id_usuariolivro: str
 
 class UsuarioEntrada(BaseModel):
     nome: str
@@ -38,3 +42,12 @@ class Usuario(UsuarioEntrada):
 class AvaliacaoEntrada(BaseModel):
     nota: int
     resenha: str
+
+class Avaliacao(AvaliacaoEntrada):
+    id: str
+
+class DashboardResponse(BaseModel):
+    paginas_lidas: int
+    livros_lidos: int
+    livros_lendo: int
+    porcentagem_concluidos: float
