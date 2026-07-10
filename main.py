@@ -267,7 +267,45 @@ def remover_livro(id_livro: str):
 
 
 # ═══════════════════  Progresso e avaliação da estante ═════════════════
+@app.get("/usuarios/{id_usuario}/estante", response_model=List[Estante])
+def exibir_estante(id_usuario):
+    with get_conn() as conn:
+        usuario_existe = conn.execute(
+            """
+            SELECT 1 FROM usuarios WHERE id_usuario = ?
+            """,
+            (id_usuario, )
+        ).fetchone()
+        
+        if not usuario_existe:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
+        rows = conn.execute(
+            """
+            SELECT
+                ul.id_usuariolivro, ul.id_livro, ul.classificacao, ul.resenha, ul.avaliacao as nota,
+                l.titulo, l.autor, l.numero_paginas, l.genero
+            FROM usuariolivro ul
+            INNER JOIN livros l ON ul.id_livro = l.id_livro
+            WHERE ul.id_usuario = ?
+            """,
+            (id_usuario, )
+        ).fetchall()
+
+    return[
+        {
+            "id": row["id_usuariolivro"],
+            "id_livro": row["id_livro"],
+            "titulo": row["titulo"],
+            "autor": row["autor"],
+            "numeroPaginas": row["numero_paginas"],
+            "genero": row["genero"],
+            "classificacao": row["classificacao"],
+            "nota": row["nota"],
+            "resenha": row["resenha"]
+        }
+        for row in rows
+    ]
 
 @app.post ("/livros/{id_livro}/historico", response_model = ProgressoLivro, status_code=201)
 def registrar_progresso(id_usuariolivro:str, dados: ProgressoLivroEntrada):
@@ -348,17 +386,13 @@ def obter_dashboard(id_usuario: str):
         metrics = conn.execute(
             """
             SELECT 
-                -- 1. Conta quantos livros estão marcados estritamente como 'Lido'
                 COUNT(CASE WHEN ul.classificacao = 'Lido' THEN 1 END) AS total_lidos,
                 
-                -- 2. Conta quantos livros estão marcados estritamente como 'Lendo'
                 COUNT(CASE WHEN ul.classificacao = 'Lendo' THEN 1 END) AS total_lendo,
                 
-                -- 3. Soma apenas o último progresso registrado de cada livro vinculado
                 COALESCE(SUM(p_recente.numero_paginas_lidas), 0) AS total_paginas
             FROM usuariolivro ul
             
-            -- Subconsulta que isola apenas o ÚLTIMO progresso de cada vínculo (id_usuariolivro)
             LEFT JOIN (
                 SELECT p1.id_usuariolivro, p1.numero_paginas_lidas
                 FROM progresso p1
@@ -374,7 +408,6 @@ def obter_dashboard(id_usuario: str):
             (id_usuario,)
         ).fetchone()
 
-    # Se o usuário não tiver nenhuma interação ou não for encontrado, zeramos o dashboard
     if not metrics:
         return DashboardResponse(paginas_lidas=0, livros_lidos=0, livros_lendo=0, porcentagem_concluidos=0.0)
 
@@ -382,7 +415,6 @@ def obter_dashboard(id_usuario: str):
     lendo = metrics["total_lendo"]
     total_lendo_ou_lido = lidos + lendo
 
-    # 4. Cálculo matemático da porcentagem evitando divisão por zero
     porcentagem = 0.0
     if total_lendo_ou_lido > 0:
         porcentagem = round((lidos / total_lendo_ou_lido) * 100, 2)
