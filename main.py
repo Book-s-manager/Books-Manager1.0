@@ -348,17 +348,13 @@ def obter_dashboard(id_usuario: str):
         metrics = conn.execute(
             """
             SELECT 
-                -- 1. Conta quantos livros estão marcados estritamente como 'Lido'
                 COUNT(CASE WHEN ul.classificacao = 'Lido' THEN 1 END) AS total_lidos,
                 
-                -- 2. Conta quantos livros estão marcados estritamente como 'Lendo'
                 COUNT(CASE WHEN ul.classificacao = 'Lendo' THEN 1 END) AS total_lendo,
                 
-                -- 3. Soma apenas o último progresso registrado de cada livro vinculado
                 COALESCE(SUM(p_recente.numero_paginas_lidas), 0) AS total_paginas
             FROM usuariolivro ul
             
-            -- Subconsulta que isola apenas o ÚLTIMO progresso de cada vínculo (id_usuariolivro)
             LEFT JOIN (
                 SELECT p1.id_usuariolivro, p1.numero_paginas_lidas
                 FROM progresso p1
@@ -374,7 +370,6 @@ def obter_dashboard(id_usuario: str):
             (id_usuario,)
         ).fetchone()
 
-    # Se o usuário não tiver nenhuma interação ou não for encontrado, zeramos o dashboard
     if not metrics:
         return DashboardResponse(paginas_lidas=0, livros_lidos=0, livros_lendo=0, porcentagem_concluidos=0.0)
 
@@ -382,7 +377,6 @@ def obter_dashboard(id_usuario: str):
     lendo = metrics["total_lendo"]
     total_lendo_ou_lido = lidos + lendo
 
-    # 4. Cálculo matemático da porcentagem evitando divisão por zero
     porcentagem = 0.0
     if total_lendo_ou_lido > 0:
         porcentagem = round((lidos / total_lendo_ou_lido) * 100, 2)
