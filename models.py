@@ -43,6 +43,17 @@ class AvaliacaoEntrada(BaseModel):
 class Avaliacao(AvaliacaoEntrada):
     id: str
 
+class Estante(BaseModel):
+    id: str
+    id_livro: str
+    titulo: str
+    autor: str
+    numeroPaginas: int
+    genero: str
+    classificacao: str
+    nota: Optional[int] = None
+    resenha: Optional[str] = None
+
 class DashboardResponse(BaseModel):
     paginas_lidas: int
     livros_lidos: int

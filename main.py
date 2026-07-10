@@ -267,7 +267,45 @@ def remover_livro(id_livro: str):
 
 
 # ═══════════════════  Progresso e avaliação da estante ═════════════════
+@app.get("/usuarios/{id_usuario}/estante", response_model=List[Estante])
+def exibir_estante(id_usuario):
+    with get_conn() as conn:
+        usuario_existe = conn.execute(
+            """
+            SELECT 1 FROM usuarios WHERE id_usuario = ?
+            """,
+            (id_usuario, )
+        ).fetchone()
+        
+        if not usuario_existe:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
+        rows = conn.execute(
+            """
+            SELECT
+                ul.id_usuariolivro, ul.id_livro, ul.classificacao, ul.resenha, ul.avaliacao as nota,
+                l.titulo, l.autor, l.numero_paginas, l.genero
+            FROM usuariolivro ul
+            INNER JOIN livros l ON ul.id_livro = l.id_livro
+            WHERE ul.id_usuario = ?
+            """,
+            (id_usuario, )
+        ).fetchall()
+
+    return[
+        {
+            "id": row["id_usuariolivro"],
+            "id_livro": row["id_livro"],
+            "titulo": row["titulo"],
+            "autor": row["autor"],
+            "numeroPaginas": row["numero_paginas"],
+            "genero": row["genero"],
+            "classificacao": row["classificacao"],
+            "nota": row["nota"],
+            "resenha": row["resenha"]
+        }
+        for row in rows
+    ]
 
 @app.post ("/livros/{id_livro}/historico", response_model = ProgressoLivro, status_code=201)
 def registrar_progresso(id_usuariolivro:str, dados: ProgressoLivroEntrada):
