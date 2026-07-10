@@ -1,7 +1,5 @@
 from pydantic import BaseModel
 from typing import List, Optional
-from pydantic import BaseModel
-from typing import List, Optional
 from datetime import datetime
 # ═══════════════════ MODELOS ═══════════════════
 
@@ -10,10 +8,12 @@ class LivroEntrada(BaseModel):
     autor: str
     numeroPaginas: int
     genero: str
-    classificacao: str
 
 class Livro(LivroEntrada):
     id: str
+
+class VinculoLivro(LivroEntrada):
+    classificacao: str
     nota: Optional[int] = None
     resenha: Optional[str] = None
 
@@ -24,17 +24,27 @@ class ProgressoLivroEntrada(BaseModel):
 class ProgressoLivro(ProgressoLivroEntrada):
     id: str
     data: datetime =datetime.now()
-    livro_id: str
+    id_usuariolivro: str
 
 class UsuarioEntrada(BaseModel):
     nome: str
     email: str
     senha: str
 
-class Usuario(UsuarioEntrada):
+class Usuario(BaseModel):
+    nome: str
+    email: str
     id: str
-    estantePessoal: List[Livro] = []
 
 class AvaliacaoEntrada(BaseModel):
     nota: int
     resenha: str
+
+class Avaliacao(AvaliacaoEntrada):
+    id: str
+
+class DashboardResponse(BaseModel):
+    paginas_lidas: int
+    livros_lidos: int
+    livros_lendo: int
+    porcentagem_concluidos: float
