@@ -1,7 +1,5 @@
 from pydantic import BaseModel
 from typing import List, Optional
-from pydantic import BaseModel
-from typing import List, Optional
 from datetime import datetime
 # ═══════════════════ MODELOS ═══════════════════
 
@@ -13,8 +11,6 @@ class LivroEntrada(BaseModel):
 
 class Livro(LivroEntrada):
     id: str
-    nota: Optional[int] = None
-    resenha: Optional[str] = None
 
 class VinculoLivro(LivroEntrada):
     classificacao: str
@@ -35,9 +31,10 @@ class UsuarioEntrada(BaseModel):
     email: str
     senha: str
 
-class Usuario(UsuarioEntrada):
+class Usuario(BaseModel):
+    nome: str
+    email: str
     id: str
-    estantePessoal: List[Livro] = []
 
 class AvaliacaoEntrada(BaseModel):
     nota: int

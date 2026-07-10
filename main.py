@@ -23,7 +23,7 @@ app = FastAPI(title="Book's Manager", version="2.0.0", lifespan=lifespan)
 def encontrar_usuario(id: str) -> Usuario:
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT id_usuario, nome, email FROM usuarios WHERE id = ?", (id, )
+            "SELECT id_usuario, nome, email FROM usuarios WHERE id_usuario = ?", (id, )
         ).fetchone()
 
     if row is None:
@@ -38,19 +38,18 @@ def encontrar_usuario(id: str) -> Usuario:
 def encontrar_livro(id: str) -> Livro:
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT id_livro, titulo, autor, numero_paginas, genero, classificacao FROM livros WHERE id = ?", (id, )
+            """SELECT * FROM livros WHERE id_livro = ?""", (id, )
         ).fetchone()
 
     if row is None:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
-    return Usuario (
+    return Livro (
         id=row["id_livro"],
         titulo=row["titulo"],
         autor=row["autor"],
         numeroPaginas=row["numero_paginas"],
         genero=row["genero"],
-        classificacao=row["classificacao"],
     )
 
 # ═══════════════════ Usuário - cadastro, edição e mais ═══════════════════
@@ -62,13 +61,14 @@ def raiz():
 @app.post("/usuarios", response_model=Usuario, status_code=201)
 def criar_usuario(dados: UsuarioEntrada):
     id_usuario = str(uuid4())
+
     with get_conn() as conn:
         conn.execute(
             """
-            INSERT INTO usuarios (id_usuario, nome, email, senha) VALUES (?, ?, ?)
+            INSERT INTO usuarios (id_usuario, nome, email, senha) VALUES (?, ?, ?, ?)
             """,
             (id_usuario, dados.nome, dados.email, dados.senha)
-        ).fetchone()
+        )
         conn.commit()
 
     return Usuario(
@@ -125,9 +125,16 @@ def editar_usuario(id: str, dados: UsuarioEntrada):
 @app.delete("/usuarios/{id}", status_code=204)
 def remover_usuario(id: str):
     with get_conn() as conn:
+        conn.execute(
+            """
+            DELETE FROM  usuariolivro WHERE id_usuario = ?
+            """,
+            (id, )
+            )
+
         cursor = conn.execute(
             """
-            DELETE FROM usuarios WHERE id = ?
+            DELETE FROM usuarios WHERE id_usuario = ?
             """,
             (id, )
         )
@@ -183,17 +190,21 @@ def vincular_livro(usuario_id:str, livro_id:str, dados:VinculoLivro):
         
         if not verifica_user:
             raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        
+        resenha_limpa = dados.resenha if dados.resenha and dados.resenha.strip() != "" else None
+
+        nota_limpa = dados.nota if dados.nota is not None and 1 <= dados.nota <= 5 else None
 
         conn.execute(
         """
         INSERT INTO usuariolivro (id_usuariolivro, id_usuario, id_livro, classificacao, resenha, avaliacao)
         VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (id_usuariolivro, usuario_id, livro_id, dados.classificacao, dados.resenha, dados.nota)
-    )
-    conn.commit()
+        (id_usuariolivro, usuario_id, livro_id, dados.classificacao, resenha_limpa, nota_limpa)
+        )
+        conn.commit()
 
-    return {"Mensagem: Livro vinculado com sucesso!"}
+    return {"Mensagem": "Livro vinculado com sucesso!"}
 
 @app.get("/livros", response_model=List[Livro])
 def listar_livros():
@@ -267,6 +278,7 @@ def registrar_progresso(id_usuariolivro:str, dados: ProgressoLivroEntrada):
         conn.execute(
             """
             INSERT INTO progresso (id_progresso, numero_paginas_lidas, comentario, data, id_usuariolivro)
+            VALUES (?, ?, ?, ?, ?)
             """,
             (id_progresso, dados.paginas_lidas, dados.comentario, data, id_usuariolivro)
             )
@@ -310,7 +322,7 @@ def sortear_livro(id_usuario: str):
             WHERE ul.id_usuario = ? AND ul.classificacao = "Quero Ler"
             ORDER BY RANDOM()
             LIMIT 1
-'           """,
+            """,
             (id_usuario, )
             ).fetchone()
         
