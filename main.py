@@ -7,51 +7,37 @@ from fastapi import FastAPI, HTTPException, Depends
 from uuid import uuid4
 from datetime import datetime
 
-from database import get_conn, init_db
+from database import *
 from models import *
 
 from security import verificar_api_key
 
+from sqlalchemy.orm import Session
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
+    Base.metadata.create_all(bind=engine)
     yield
 
 app = FastAPI(title="Book's Manager", version="2.0.0", lifespan=lifespan)
 
 # ═══════════════════ HELPERS ═══════════════════
 
-def encontrar_usuario(id: str) -> Usuario:
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT id_usuario, nome, email FROM usuarios WHERE id_usuario = ?", (id, )
-        ).fetchone()
+def encontrar_usuario(id: str, db: Session) -> UsuarioDB:
+    usuario = db.query(UsuarioDB).filter(UsuarioDB.id_usuario == id).first()
 
-    if row is None:
+    if usuario is None:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    return usuario
 
-    return Usuario (
-        id=row["id_usuario"],
-        nome=row["nome"],
-        email=row["email"],
-    )
+def encontrar_livro(id: str, db: Session) -> LivroDB:
+    livro = db.query(LivroDB).filter(LivroDB.id_livro == id).first()
 
-def encontrar_livro(id: str) -> Livro:
-    with get_conn() as conn:
-        row = conn.execute(
-            """SELECT * FROM livros WHERE id_livro = ?""", (id, )
-        ).fetchone()
-
-    if row is None:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
-
-    return Livro (
-        id=row["id_livro"],
-        titulo=row["titulo"],
-        autor=row["autor"],
-        numeroPaginas=row["numero_paginas"],
-        genero=row["genero"],
-    )
+    if livro is None:
+        raise HTTPException(status_code=404, detail="Livro não encontrado")
+    
+    return livro
 
 # ═══════════════════ Usuário - cadastro, edição e mais ═══════════════════
 
@@ -60,106 +46,99 @@ def raiz():
     return {"mensagem": "Gerenciador de Livros funcionando! 😊💕"}
 
 @app.post("/usuarios", response_model=Usuario, status_code=201)
-def criar_usuario(dados: UsuarioEntrada):
+def criar_usuario(dados: UsuarioEntrada, db: Session = Depends(get_db)):
     id_usuario = str(uuid4())
 
-    with get_conn() as conn:
-        conn.execute(
-            """
-            INSERT INTO usuarios (id_usuario, nome, email, senha) VALUES (?, ?, ?, ?)
-            """,
-            (id_usuario, dados.nome, dados.email, dados.senha)
-        )
-        conn.commit()
+    novo_usuario = UsuarioDB(
+        id_usuario=id_usuario,
+        nome=dados.nome,
+        email=dados.email,
+        senha=dados.senha
+    )
 
+    try:
+        db.add(novo_usuario)
+        db.commit()
+        db.refresh(novo_usuario)
+
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Erro ao criar usuário")
+    
     return Usuario(
         id=id_usuario,
         nome=dados.nome,
-        email=dados.email
+        email=dados.email,
     )
 
 @app.get("/usuarios", response_model=List[Usuario])
-def listar_usuarios():
-    with get_conn() as conn:
-        rows = conn.execute(
-            """
-            SELECT nome, email, id_usuario FROM usuarios
-            """
-    ).fetchall()
-        
-        if rows is None:
-            raise HTTPException(status_code=404, detail="Nenhum usuário cadastrado")
+def listar_usuarios(db: Session = Depends(get_db)):
+    usuarios = db.query(UsuarioDB).all()
 
-    return[
-        Usuario (
-            id=row["id_usuario"],
-            nome=row["nome"],
-            email=row["email"],
-        )
-        for row in rows
-    ]
+    if not usuarios:
+        raise HTTPException(status_code=404, detail="Nenhum usuário encontrado")
+    
+    return usuarios
 
 @app.get("/usuarios/{id}", response_model=Usuario)
-def buscar_usuario(id: str):
+def buscar_usuario(id: str, db: Session = Depends(get_db)):
     return encontrar_usuario(id)
 
 @app.put("/usuarios/{id}", response_model=Usuario, dependencies=[Depends(verificar_api_key)])
-def editar_usuario(id: str, dados: UsuarioEntrada):
-    with get_conn() as conn:
-        cursor = conn.execute(
-            """
-            UPDATE usuarios SET nome = ?, email = ?, senha = ? WHERE id_usuario = ?
-            """,
-            (dados.nome, dados.email, dados.senha, id)
-        )
-        conn.commit()
+def editar_usuario(id: str, dados: UsuarioEntrada, db: Session = Depends(get_db)):
+    usuario = encontrar_usuario(id, db)
 
-        if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Usuário não encontrado")
-        
-    return Usuario(
-        id=id,
-        nome=dados.nome,
-        email=dados.email
-    )
-        
+    usuario.nome = dados.nome
+    usuario.email = dados.email
+    usuario.senha = dados.senha
+
+    try:
+        db.commit()
+        db.refresh(usuario)
+
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Erro ao editar usuário")
+
+    return usuario
+
 @app.delete("/usuarios/{id}", status_code=204, dependencies=[Depends(verificar_api_key)])
-def remover_usuario(id: str):
-    with get_conn() as conn:
-        conn.execute(
-            """
-            DELETE FROM  usuariolivro WHERE id_usuario = ?
-            """,
-            (id, )
-            )
+def remover_usuario(id: str, db: Session = Depends(get_db)):
+    usuario = encontrar_usuario(id, db)
+    db.delete(usuario)
 
-        cursor = conn.execute(
-            """
-            DELETE FROM usuarios WHERE id_usuario = ?
-            """,
-            (id, )
-        )
-        conn.commit()
+    try:
+        db.commit()
 
-        if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Usuario não encontrado")
-        
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Erro ao remover usuário")
+
     return None
 
 # ═══════════════════ Livros - criar e vincular a estante, editar e outras funções ═══════════════════
 
 @app.post("/livros", response_model=Livro, status_code=201)
-def criar_livro(dados: LivroEntrada):
+def criar_livro(dados: LivroEntrada, db: Session = Depends(get_db)  ):
     id_livro = str(uuid4())
-    with get_conn() as conn:
-        conn.execute(
-            """
-            INSERT INTO livros (id_livro, titulo, autor, numero_paginas, genero) VALUES (?, ?, ?, ?, ?);
-            """,
-            (id_livro, dados.titulo, dados.autor, dados.numeroPaginas, dados.genero)
-        )
-        conn.commit()
-    
+
+    novo_livro = LivroDB(
+        id_livro=id_livro,
+        titulo=dados.titulo,
+        autor=dados.autor,
+        numero_paginas=dados.numeroPaginas,
+        genero=dados.genero
+    )
+
+    try:
+        db.add(novo_livro)
+        db.commit()
+        db.refresh(novo_livro)
+
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Erro ao criar livro")
+
     return Livro(
         id=id_livro,
         titulo=dados.titulo,
@@ -169,175 +148,123 @@ def criar_livro(dados: LivroEntrada):
     )
 
 @app.post("/usuarios/{usuario_id}/livros/{livro_id}")
-def vincular_livro(usuario_id:str, livro_id:str, dados:VinculoLivro):
+def vincular_livro(usuario_id:str, livro_id:str, dados:VinculoLivro, db: Session = Depends(get_db)):
     id_usuariolivro = str(uuid4())
-    with get_conn() as conn:
-        verifica_livro = conn.execute(
-            """
-            SELECT 1 FROM livros WHERE id_livro = ?
-            """,
-            (livro_id, )
-        ).fetchone()
 
-        if not verifica_livro:
-            raise HTTPException(status_code=404, detail="Livro não encontrado")
+    encontrar_usuario(usuario_id, db)
+    encontrar_livro(livro_id, db)
         
-        verifica_user = conn.execute(
-            """
-            SELECT 1 FROM usuarios WHERE id_usuario = ?
-            """,
-            (usuario_id, )
-            ).fetchone()
-        
-        if not verifica_user:
-            raise HTTPException(status_code=404, detail="Usuário não encontrado")
-        
-        resenha_limpa = dados.resenha if dados.resenha and dados.resenha.strip() != "" else None
+    resenha_limpa = dados.resenha if dados.resenha and dados.resenha.strip() != "" else None
+    nota_limpa = dados.nota if dados.nota is not None and 1 <= dados.nota <= 5 else None
 
-        nota_limpa = dados.nota if dados.nota is not None and 1 <= dados.nota <= 5 else None
+    novo_vinculo = UsuarioLivroDB(
+        id_usuariolivro=id_usuariolivro,
+        id_usuario=usuario_id,
+        id_livro=livro_id,
+        classificacao=dados.classificacao,
+        resenha=resenha_limpa,
+        avaliacao=nota_limpa
+    )
 
-        conn.execute(
-        """
-        INSERT INTO usuariolivro (id_usuariolivro, id_usuario, id_livro, classificacao, resenha, avaliacao)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        (id_usuariolivro, usuario_id, livro_id, dados.classificacao, resenha_limpa, nota_limpa)
-        )
-        conn.commit()
+    try:
+        db.add(novo_vinculo)
+        db.commit()
+        db.refresh(novo_vinculo)
+
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Erro ao vincular livro à estante do usuário")
 
     return {"Mensagem": "Livro vinculado com sucesso!"}
 
 @app.get("/livros", response_model=List[Livro])
-def listar_livros():
-    with get_conn() as conn:
-        rows = conn.execute(
-            """
-            SELECT * FROM livros
-            """
-        ).fetchall()
+def listar_livros(db: Session = Depends(get_db)):
+    usuarios = db.query(UsuarioDB).all()
 
-    return [
-        Livro(
-            id=row["id_livro"],
-            titulo=row["titulo"],
-            autor=row["autor"],
-            numeroPaginas=row["numero_paginas"],
-            genero=row["genero"]
-        )
-        for row in rows
-    ]
+    if not usuarios:
+        raise HTTPException(status_code=404, detail="Nenhum usuário encontrado")
+    
+    return usuarios
 
 @app.get("/livros/{id_livro}", response_model=Livro)
-def buscar_livro(id_livro: str):
-    return encontrar_livro(id_livro)
+def buscar_livro(id_livro: str, db: Session = Depends(get_db)):
+    return encontrar_livro(id_livro, db)
 
 @app.put("/livros/{id_livro}", response_model=Livro, dependencies=[Depends(verificar_api_key)])
-def editar_livro(id_livro: str, dados: LivroEntrada):
-    with get_conn() as conn:
-        cursor = conn.execute(
-            """
-            UPDATE livros SET titulo = ?, autor = ?, numero_paginas = ?, genero = ? WHERE id_livro = ?
-            """,
-            (dados.titulo, dados.autor, dados.numeroPaginas, dados.genero, id_livro)
-        )
-        conn.commit()
+def editar_livro(id_livro: str, dados: LivroEntrada, db: Session = Depends(get_db)):
+    livro = encontrar_livro(id_livro, db)
 
-        if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Livro não encontrado")
-        
-        return Livro(
-            id=id_livro,
-            titulo=dados.titulo,
-            autor=dados.autor,
-            numeroPaginas=dados.numeroPaginas,
-            genero=dados.genero,
-        )
+    livro.titulo = dados.titulo
+    livro.autor = dados.autor
+    livro.numero_paginas = dados.numeroPaginas
+    livro.genero = dados.genero
+
+    try:
+        db.commit()
+        db.refresh(livro)
+
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Erro ao editar livro")
+
+    return livro
 
 @app.delete("/livros/{id_livro}", status_code=204, dependencies=[Depends(verificar_api_key)])
-def remover_livro(id_livro: str):
-    with get_conn() as conn:
-        conn.execute(
-            """
-            DELETE FROM progresso 
-            WHERE id_usuariolivro IN (SELECT id_usuariolivro FROM usuariolivro WHERE id_livro = ?)
-            """,
-            (id_livro, )
-        )
+def remover_livro(id_livro: str, db: Session = Depends(get_db)):
+    livro = encontrar_livro(id_livro, db)
+    db.delete(livro)
 
-        conn.execute(
-            """
-            DELETE FROM usuariolivro WHERE id_livro = ?
-            """,
-            (id_livro, )
-        )
-        cursor = conn.execute(
-            """
-            DELETE FROM livros WHERE id_livro = ?
-            """,
-            (id_livro, )
-        )
+    try:
+        db.commit()
 
-        if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Livro não encontrado")
-        
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Erro ao remover livro")
+
     return None
-
 
 # ═══════════════════  Progresso e avaliação da estante ═════════════════
 @app.get("/usuarios/{id_usuario}/estante", response_model=List[Estante])
-def exibir_estante(id_usuario):
-    with get_conn() as conn:
-        usuario_existe = conn.execute(
-            """
-            SELECT 1 FROM usuarios WHERE id_usuario = ?
-            """,
-            (id_usuario, )
-        ).fetchone()
-        
-        if not usuario_existe:
-            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+def exibir_estante(id_usuario, db: Session = Depends(get_db)):
+    encontrar_usuario(id_usuario, db)
 
-        rows = conn.execute(
-            """
-            SELECT
-                ul.id_usuariolivro, ul.id_livro, ul.classificacao, ul.resenha, ul.avaliacao as nota,
-                l.titulo, l.autor, l.numero_paginas, l.genero
-            FROM usuariolivro ul
-            INNER JOIN livros l ON ul.id_livro = l.id_livro
-            WHERE ul.id_usuario = ?
-            """,
-            (id_usuario, )
-        ).fetchall()
+    itens_estante = db.query(UsuarioLivroDB).filter(UsuarioLivroDB.id_usuario == id_usuario).all()
 
-    return[
-        {
-            "id": row["id_usuariolivro"],
-            "id_livro": row["id_livro"],
-            "titulo": row["titulo"],
-            "autor": row["autor"],
-            "numeroPaginas": row["numero_paginas"],
-            "genero": row["genero"],
-            "classificacao": row["classificacao"],
-            "nota": row["nota"],
-            "resenha": row["resenha"]
-        }
-        for row in rows
-    ]
+    resposta = []
+    for item in itens_estante:
+        resposta.append({
+            "id": item.id_usuariolivro,
+            "id_livro": item.id_livro,
+            "titulo": item.livro.titulo,
+            "autor": item.livro.autor,
+            "numeroPaginas": item.livro.numero_paginas,
+            "genero": item.livro.genero,
+            "classificacao": item.classificacao,
+            "nota": item.avaliacao,
+            "resenha": item.resenha
+        })
 
 @app.post ("/livros/{id_livro}/historico", response_model = ProgressoLivro, status_code=201)
-def registrar_progresso(id_usuariolivro:str, dados: ProgressoLivroEntrada):
+def registrar_progresso(id_usuariolivro:str, dados: ProgressoLivroEntrada, db: Session = Depends(get_db)):
     id_progresso = str(uuid4())
     data = datetime.today().date()
 
-    with get_conn() as conn:
-        conn.execute(
-            """
-            INSERT INTO progresso (id_progresso, numero_paginas_lidas, comentario, data, id_usuariolivro)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (id_progresso, dados.paginas_lidas, dados.comentario, data, id_usuariolivro)
-            )
-        conn.commit()
+    novo_progresso = ProgressoDB(
+        id_progresso=id_progresso,
+        numero_paginas_lidas=dados.paginas_lidas,
+        comentario=dados.comentario,
+        data=data,
+        id_usuariolivro=id_usuariolivro
+    )
+
+    try:
+        db.add(novo_progresso)
+        db.commit()
+        db.refresh(novo_progresso)
+
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Erro ao registrar progresso do livro")
 
     return ProgressoLivro(
         id=id_progresso,
@@ -347,136 +274,120 @@ def registrar_progresso(id_usuariolivro:str, dados: ProgressoLivroEntrada):
         id_usuariolivro=id_usuariolivro
     )
 
-@app.get("/usuarios/{id_usuario}/historicos")
-def ver_progressos(id_usuario):
-    with get_conn() as conn:
-        usuario_existe = conn.execute(
-                "SELECT 1 FROM usuarios WHERE id_usuario = ?", (id_usuario,)
-            ).fetchone()
+@app.get("/usuarios/{id_usuario}/historicos", response_model=List[HistoricoProgressoResponse])
+def ver_progressos(id_usuario: str, db: Session = Depends(get_db)):
+    encontrar_usuario(id_usuario, db)
+    
+    rows = (
+        db.query(ProgressoDB)
+        .join(UsuarioLivroDB, ProgressoDB.id_usuariolivro == UsuarioLivroDB.id_usuariolivro)
+        .join(LivroDB, UsuarioLivroDB.id_livro == LivroDB.id_livro)
+        .filter(UsuarioLivroDB.id_usuario == id_usuario)
+        .order_by(ProgressoDB.data.desc())
+        .all()
+    )
+    
+    resultado = []
+    for p in rows:
+        resultado.append({
+            "id_progresso": p.id_progresso,
+            "id_livro": p.vinculo_estante.id_livro,
+            # 🌟 Mágica do ORM: navegando do progresso até o livro vinculado!
+            "titulo_livro": p.vinculo_estante.livro.titulo,
+            "autor_livro": p.vinculo_estante.livro.autor,
+            "numero_paginas_lidas": p.numero_paginas_lidas,
+            "comentario": p.comentario,
+            "data": p.data
+        })
         
-        if not usuario_existe:
-            raise HTTPException(status_code=404, detail="Usuário não encontrado")
-        
-        rows = conn.execute(
-                """
-                SELECT 
-                    p.id_progresso, p.numero_paginas_lidas, p.comentario, p.data,
-                    l.id_livro, l.titulo AS titulo_livro, l.autor AS autor_livro
-                FROM progresso p
-                INNER JOIN usuariolivro ul ON p.id_usuariolivro = ul.id_usuariolivro
-                INNER JOIN livros l ON ul.id_livro = l.id_livro
-                WHERE ul.id_usuario = ?
-                ORDER BY p.data DESC
-                """,
-                (id_usuario,)
-            ).fetchall()
-        
-        return [
-        {
-            "id_progresso": row["id_progresso"],
-            "id_livro": row["id_livro"],
-            "titulo_livro": row["titulo_livro"],
-            "autor_livro": row["autor_livro"],
-            "numero_paginas_lidas": row["numero_paginas_lidas"],
-            "comentario": row["comentario"],
-            "data": row["data"] # O FastAPI converte a string do SQLite para datetime automaticamente
-        }
-        for row in rows
-    ]
+    return resultado
 
 @app.patch("/usuarios/estante/{id_usuariolivro}/avaliar", status_code=200)
-def avaliar_livro(id_usuariolivro: str, dados: AvaliacaoEntrada):
-    with get_conn() as conn:
-        cursor = conn.execute(
-            """
-            UPDATE usuariolivro SET avaliacao = ?, resenha = ? WHERE id_usuariolivro = ?
-            """,
-            (dados.nota, dados.resenha, id_usuariolivro)
-            )
-        
-        if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Livro não encontrado na estante deste usuário.")
+def avaliar_livro(id_usuariolivro: str, dados: AvaliacaoEntrada, db: Session = Depends(get_db)):
+    vinculo_banco = db.query(UsuarioLivroDB).filter(UsuarioLivroDB.id_usuariolivro == id_usuariolivro).first()
 
-        return Avaliacao (
-            id=id_usuariolivro,
-            nota=dados.nota,
-            resenha=dados.resenha
-        )
+    if not vinculo_banco:
+        raise HTTPException(status_code=404, detail="Livro não encontrado na estante deste usuário.")
+        
+    vinculo_banco.avaliacao = dados.nota
+    vinculo_banco.resenha = dados.resenha
+    
+    try:
+        db.commit()
+        db.refresh(vinculo_banco)
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Erro ao salvar a avaliação. Verifique as restrições de nota (1 a 5).")
+
+    return Avaliacao(
+        id=vinculo_banco.id_usuariolivro,
+        nota=vinculo_banco.avaliacao,
+        resenha=vinculo_banco.resenha
+    )
 
 # ═══════════════════  Sorteio de Leitura ═════════════════
 @app.get("/usuarios/{id_usuario}/sorteio")
-def sortear_livro(id_usuario: str):
-    with get_conn() as conn:
-        row = conn.execute(
-            """
-            SELECT l.id_livro, l.titulo, l.autor, l.numero_paginas, l.genero FROM livros l
-            INNER JOIN usuariolivro ul ON l.id_livro = ul.id_livro
-            WHERE ul.id_usuario = ? AND ul.classificacao = "Quero Ler"
-            ORDER BY RANDOM()
-            LIMIT 1
-            """,
-            (id_usuario, )
-            ).fetchone()
-        
-        if not row:
-            raise HTTPException(status_code=404, detail="Nenhum livro vinculado para sorteio")
+def sortear_livro(id_usuario: str, db: Session = Depends(get_db)):
+    encontrar_usuario(id_usuario, db)
+    
+    registro_sorteado = (
+        db.query(LivroDB)
+        .join(UsuarioLivroDB, LivroDB.id_livro == UsuarioLivroDB.id_livro)
+        .filter(UsuarioLivroDB.id_usuario == id_usuario)
+        .filter(UsuarioLivroDB.classificacao == "Quero Ler")
+        .order_by(func.random())
+        .first()
+    )
+
+    if not registro_sorteado:
+        raise HTTPException(status_code=404, detail="Nenhum livro vinculado para sorteio")
 
     return {
         "livro": {
-            "id": row["id_livro"],
-            "titulo": row["titulo"],
-            "autor": row["autor"],
-            "numeroPaginas": row["numero_paginas"],
-            "genero": row["genero"]
+            "id": registro_sorteado.id_livro,
+            "titulo": registro_sorteado.titulo,
+            "autor": registro_sorteado.autor,
+            "numeroPaginas": registro_sorteado.numero_paginas,
+            "genero": registro_sorteado.genero
         },
         "mensagem": "🎲 O dado caiu neste livro! Que tal começar a leitura?"
     }
 
 # ═════════════ DASHBOARD  ═════════════
-
 @app.get("/usuarios/{id_usuario}/dashboard", response_model=DashboardResponse)
-def obter_dashboard(id_usuario: str):
-    with get_conn() as conn:
-        metrics = conn.execute(
-            """
-            SELECT 
-                COUNT(CASE WHEN ul.classificacao = 'Lido' THEN 1 END) AS total_lidos,
-                
-                COUNT(CASE WHEN ul.classificacao = 'Lendo' THEN 1 END) AS total_lendo,
-                
-                COALESCE(SUM(p_recente.numero_paginas_lidas), 0) AS total_paginas
-            FROM usuariolivro ul
-            
-            LEFT JOIN (
-                SELECT p1.id_usuariolivro, p1.numero_paginas_lidas
-                FROM progresso p1
-                INNER JOIN (
-                    SELECT id_usuariolivro, MAX(data) AS max_data
-                    FROM progresso
-                    GROUP BY id_usuariolivro
-                ) p2 ON p1.id_usuariolivro = p2.id_usuariolivro AND p1.data = p2.max_data
-            ) p_recente ON ul.id_usuariolivro = p_recente.id_usuariolivro
-            
-            WHERE ul.id_usuario = ?
-            """,
-            (id_usuario,)
-        ).fetchone()
+def obter_dashboard(id_usuario: str, db: Session = Depends(get_db)):
+    # 1. Valida se o usuário existe usando o helper comum
+    encontrar_usuario(id_usuario, db)
 
-    if not metrics:
-        return DashboardResponse(paginas_lidas=0, livros_lidos=0, livros_lendo=0, porcentagem_concluidos=0.0)
+    # 2. Query 1: Contar quantos livros estão como 'Lido' e quantos estão como 'Lendo'
+    # Fazemos isso em uma única consulta rápida no banco
+    metricas_livros = (
+        db.query(
+            func.count(func.distinct(func.case((UsuarioLivroDB.classificacao == 'Lido', UsuarioLivroDB.id_usuariolivro)))),
+            func.count(func.distinct(func.case((UsuarioLivroDB.classificacao == 'Lendo', UsuarioLivroDB.id_usuariolivro))))
+        )
+        .filter(UsuarioLivroDB.id_usuario == id_usuario)
+        .first()
+    )
+    
+    total_lidos = metricas_livros[0] or 0
+    total_lendo = metricas_livros[1] or 0
 
-    lidos = metrics["total_lidos"]
-    lendo = metrics["total_lendo"]
-    total_lendo_ou_lido = lidos + lendo
+    total_paginas = (
+        db.query(func.sum(ProgressoDB.numero_paginas_lidas))
+        .join(UsuarioLivroDB, ProgressoDB.id_usuariolivro == UsuarioLivroDB.id_usuariolivro)
+        .filter(UsuarioLivroDB.id_usuario == id_usuario)
+        .scalar()
+    ) or 0
 
+    total_lendo_ou_lido = total_lidos + total_lendo
     porcentagem = 0.0
     if total_lendo_ou_lido > 0:
-        porcentagem = round((lidos / total_lendo_ou_lido) * 100, 2)
-
+        porcentagem = round((total_lidos / total_lendo_ou_lido) * 100, 2)
 
     return DashboardResponse(
-        paginas_lidas=metrics["total_paginas"],
-        livros_lidos=lidos,
-        livros_lendo=lendo,
+        paginas_lidas=total_paginas,
+        livros_lidos=total_lidos,
+        livros_lendo=total_lendo,
         porcentagem_concluidos=porcentagem
     )
