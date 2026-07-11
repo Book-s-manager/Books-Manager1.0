@@ -255,6 +255,20 @@ def editar_livro(id_livro: str, dados: LivroEntrada):
 @app.delete("/livros/{id_livro}", status_code=204)
 def remover_livro(id_livro: str):
     with get_conn() as conn:
+        conn.execute(
+            """
+            DELETE FROM progresso 
+            WHERE id_usuariolivro IN (SELECT id_usuariolivro FROM usuariolivro WHERE id_livro = ?)
+            """,
+            (id_livro, )
+        )
+
+        conn.execute(
+            """
+            DELETE FROM usuariolivro WHERE id_livro = ?
+            """,
+            (id_livro, )
+        )
         cursor = conn.execute(
             """
             DELETE FROM livros WHERE id_livro = ?
@@ -264,6 +278,8 @@ def remover_livro(id_livro: str):
 
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Livro não encontrado")
+        
+    return None
 
 
 # ═══════════════════  Progresso e avaliação da estante ═════════════════
@@ -329,6 +345,43 @@ def registrar_progresso(id_usuariolivro:str, dados: ProgressoLivroEntrada):
         data=data,
         id_usuariolivro=id_usuariolivro
     )
+
+@app.get("/usuarios/{id_usuario}/historicos")
+def ver_progressos(id_usuario):
+    with get_conn() as conn:
+        usuario_existe = conn.execute(
+                "SELECT 1 FROM usuarios WHERE id_usuario = ?", (id_usuario,)
+            ).fetchone()
+        
+        if not usuario_existe:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        
+        rows = conn.execute(
+                """
+                SELECT 
+                    p.id_progresso, p.numero_paginas_lidas, p.comentario, p.data,
+                    l.id_livro, l.titulo AS titulo_livro, l.autor AS autor_livro
+                FROM progresso p
+                INNER JOIN usuariolivro ul ON p.id_usuariolivro = ul.id_usuariolivro
+                INNER JOIN livros l ON ul.id_livro = l.id_livro
+                WHERE ul.id_usuario = ?
+                ORDER BY p.data DESC
+                """,
+                (id_usuario,)
+            ).fetchall()
+        
+        return [
+        {
+            "id_progresso": row["id_progresso"],
+            "id_livro": row["id_livro"],
+            "titulo_livro": row["titulo_livro"],
+            "autor_livro": row["autor_livro"],
+            "numero_paginas_lidas": row["numero_paginas_lidas"],
+            "comentario": row["comentario"],
+            "data": row["data"] # O FastAPI converte a string do SQLite para datetime automaticamente
+        }
+        for row in rows
+    ]
 
 @app.patch("/usuarios/estante/{id_usuariolivro}/avaliar", status_code=200)
 def avaliar_livro(id_usuariolivro: str, dados: AvaliacaoEntrada):

@@ -16,6 +16,7 @@ class VinculoLivro(LivroEntrada):
     classificacao: str
     nota: Optional[int] = None
     resenha: Optional[str] = None
+    
 
 class ProgressoLivroEntrada(BaseModel):
     comentario:str
@@ -59,3 +60,12 @@ class DashboardResponse(BaseModel):
     livros_lidos: int
     livros_lendo: int
     porcentagem_concluidos: float
+
+class HistoricoProgressoResponse(BaseModel):
+    id_progresso: str
+    id_livro: str
+    titulo_livro: str
+    autor_livro: str
+    numero_paginas_lidas: int
+    comentario: Optional[str] = None
+    data: datetime
