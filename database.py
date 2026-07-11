@@ -1,57 +1,73 @@
 import sqlite3
+from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, CheckConstraint, DateTime, func
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship
+# ================ MÉTODO NOVO (SQLALCHEMY) ================
 
-# Caminho do arquivo do banco de dados
-DB_PATH = "books_manager.db"
+SQLALCHEMY_DATABASE_URL = "sqlite:///./books_manager.db"
 
-def get_conn() -> sqlite3.Connection:
-    """Abre e retorna uma conexão com o banco."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("PRAGMA foreign_keys = ON") #ATIVAR CHAVES ESTRANGEIRAS
-    # Permite acessar colunas pelo nome: row["titulo"]
-    conn.row_factory = sqlite3.Row
-    return conn
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+)
 
-def init_db():
-    """Cria a tabela se ela ainda não existir."""
-    with get_conn() as conn:
-        conn.executescript("""
-                           
-            CREATE TABLE IF NOT EXISTS usuarios (
-                id_usuario  TEXT PRIMARY KEY,
-                nome    TEXT NOT NULL,
-                email TEXT NOT NULL UNIQUE,
-                senha VARCHAR(250) NOT NULL
-            );
-                     
-            CREATE TABLE IF NOT EXISTS livros (
-                id_livro TEXT PRIMARY KEY,
-                titulo VARCHAR (150) NOT NULL,
-                autor VARCHAR(150) NOT NULL,
-                numero_paginas INTEGER NOT NULL,
-                genero  VARCHAR(150) NOT NULL
-                           
-            );
-                           
-            CREATE TABLE IF NOT EXISTS usuariolivro (
-                id_usuariolivro TEXT PRIMARY KEY,
-                id_usuario TEXT NOT NULL,
-                id_livro TEXT NOT NULL,
-                classificacao TEXT NOT NULL CHECK (classificacao IN ('Quero Ler', 'Lendo', 'Lido')),
-                resenha VARCHAR(300),
-                avaliacao INTEGER CHECK (avaliacao BETWEEN 1 AND 5),
-                FOREIGN KEY(id_usuario) REFERENCES usuarios(id_usuario),
-                FOREIGN KEY(id_livro) REFERENCES livros(id_livro),
-                UNIQUE(id_usuario, id_livro)
-            );
-                           
-            CREATE TABLE IF NOT EXISTS progresso (
-                id_progresso TEXT PRIMARY KEY,
-                numero_paginas_lidas INTEGER NOT NULL CHECK(numero_paginas_lidas >= 0),
-                comentario VARCHAR(300),
-                data DATETIME DEFAULT CURRENT_TIMESTAMP,
-                id_usuariolivro TEXT NOT NULL,
-                FOREIGN KEY(id_usuariolivro) REFERENCES usuariolivro(id_usuariolivro)
-            )
-                           
-        """)
-        conn.commit()
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)         
+
+Base = declarative_base()
+
+def get_db():
+    db = SessionLocal()
+    try:
+        db.execute("PRAGMA foreign_keys = ON")
+        yield db
+    finally:
+        db.close()
+
+class UsuarioDB(Base):
+    __tablename__ = "usuarios"
+
+    id_usuario = Column(String, primary_key=True)
+    nome = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    senha = Column(String, nullable=False)
+
+    livros_estante = relationship("UsuarioLivroDB", back_populates="usuario", cascade="all, delete-orphan")
+
+class LivroDB(Base):
+    __tablename__ = "livros"
+
+    id_livro = Column(String, primary_key=True)
+    titulo = Column(String, nullable=False)
+    numero_paginas = Column(Integer, nullable=False)
+    genero = Column(String, nullable=False)
+
+    usuarios_que_adicionaram = relationship("UsuarioLivroDB", back_populates="livro", cascade="all, delete-orphan")
+
+class UsuarioLivroDB(Base):
+    __tablename__ = "usuariolivro"
+
+    id_usuariolivro = Column(String, primary_key=True)
+    id_usuario = Column(String, ForeignKey("usuarios.id_usuario"), nullable=False)
+    id_livro = Column(String, ForeignKey("livros.id_livro"), nullable=False)
+    classificacao = Column(String, nullable=False)
+    resenha = Column(String)
+    avaliacao = Column(Integer)
+
+    usuario = relationship("UsuarioDB", back_populates="livros_estante")
+    livro = relationship("LivroDB", back_populates="usuarios_que_adicionaram")
+
+    progressos = relationship("ProgressoDB", back_populates="vinculo_estante", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        CheckConstraint(classificacao.in_(['Quero Ler', 'Lendo', 'Lido']), name='check_classificacao'),
+        CheckConstraint('avaliacao >= 1 AND avaliacao <= 5', name='check_avaliacao'),
+    )
+
+class ProgressoDB(Base):
+    __tablename__ = "progresso"
+
+    id_progresso = Column(String, primary_key=True)
+    numero_paginas_lidas = Column(Integer, nullable=False)
+    comentario = Column(String)
+    data = Column(DateTime, default=func.now())
+    id_usuariolivro = Column(String, ForeignKey("usuariolivro.id_usuariolivro"), nullable=False)
+
+    vinculo_estante = relationship("UsuarioLivroDB", back_populates="progresso")    
