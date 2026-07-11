@@ -2,7 +2,7 @@ def main():
     print("Hello from booksmanager!")
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 
 from uuid import uuid4
 from datetime import datetime
@@ -10,6 +10,7 @@ from datetime import datetime
 from database import get_conn, init_db
 from models import *
 
+from security import verificar_api_key
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -102,7 +103,7 @@ def listar_usuarios():
 def buscar_usuario(id: str):
     return encontrar_usuario(id)
 
-@app.put("/usuarios/{id}", response_model=Usuario)
+@app.put("/usuarios/{id}", response_model=Usuario, dependencies=[Depends(verificar_api_key)])
 def editar_usuario(id: str, dados: UsuarioEntrada):
     with get_conn() as conn:
         cursor = conn.execute(
@@ -122,7 +123,7 @@ def editar_usuario(id: str, dados: UsuarioEntrada):
         email=dados.email
     )
         
-@app.delete("/usuarios/{id}", status_code=204)
+@app.delete("/usuarios/{id}", status_code=204, dependencies=[Depends(verificar_api_key)])
 def remover_usuario(id: str):
     with get_conn() as conn:
         conn.execute(
@@ -230,7 +231,7 @@ def listar_livros():
 def buscar_livro(id_livro: str):
     return encontrar_livro(id_livro)
 
-@app.put("/livros/{id_livro}", response_model=Livro)
+@app.put("/livros/{id_livro}", response_model=Livro, dependencies=[Depends(verificar_api_key)])
 def editar_livro(id_livro: str, dados: LivroEntrada):
     with get_conn() as conn:
         cursor = conn.execute(
@@ -252,7 +253,7 @@ def editar_livro(id_livro: str, dados: LivroEntrada):
             genero=dados.genero,
         )
 
-@app.delete("/livros/{id_livro}", status_code=204)
+@app.delete("/livros/{id_livro}", status_code=204, dependencies=[Depends(verificar_api_key)])
 def remover_livro(id_livro: str):
     with get_conn() as conn:
         conn.execute(
