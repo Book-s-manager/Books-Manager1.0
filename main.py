@@ -244,7 +244,7 @@ def exibir_estante(id_usuario, db: Session = Depends(get_db)):
             "resenha": item.resenha
         })
 
-@app.post ("/livros/{id_livro}/historico", response_model = ProgressoLivro, status_code=201)
+@app.post ("/livros/{id_usuariolivro}/historico", response_model = ProgressoLivro, status_code=201)
 def registrar_progresso(id_usuariolivro:str, dados: ProgressoLivroEntrada, db: Session = Depends(get_db)):
     id_progresso = str(uuid4())
     data = datetime.today().date()
