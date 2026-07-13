@@ -1,5 +1,5 @@
 import sqlite3
-from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, CheckConstraint, DateTime, func
+from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, CheckConstraint, text, DateTime, func
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 # ================ MÉTODO NOVO (SQLALCHEMY) ================
 
@@ -15,8 +15,9 @@ Base = declarative_base()
 
 def get_db():
     db = SessionLocal()
+    db.execute(text("PRAGMA foreign_keys = ON"))
+
     try:
-        db.execute("PRAGMA foreign_keys = ON")
         yield db
     finally:
         db.close()
@@ -35,6 +36,7 @@ class LivroDB(Base):
     __tablename__ = "livros"
 
     id_livro = Column(String, primary_key=True)
+    autor = Column(String, nullable=False)
     titulo = Column(String, nullable=False)
     numero_paginas = Column(Integer, nullable=False)
     genero = Column(String, nullable=False)
@@ -70,4 +72,4 @@ class ProgressoDB(Base):
     data = Column(DateTime, default=func.now())
     id_usuariolivro = Column(String, ForeignKey("usuariolivro.id_usuariolivro"), nullable=False)
 
-    vinculo_estante = relationship("UsuarioLivroDB", back_populates="progresso")    
+    vinculo_estante = relationship("UsuarioLivroDB", back_populates="progressos")    
