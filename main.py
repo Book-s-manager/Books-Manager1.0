@@ -14,6 +14,8 @@ from security import verificar_api_key
 
 from sqlalchemy.orm import Session
 
+from sqlalchemy import func, case
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
@@ -82,7 +84,7 @@ def listar_usuarios(db: Session = Depends(get_db)):
 
 @app.get("/usuarios/{id}", response_model=Usuario)
 def buscar_usuario(id: str, db: Session = Depends(get_db)):
-    return encontrar_usuario(id)
+    return encontrar_usuario(id, db)
 
 @app.put("/usuarios/{id}", response_model=Usuario, dependencies=[Depends(verificar_api_key)])
 def editar_usuario(id: str, dados: UsuarioEntrada, db: Session = Depends(get_db)):
@@ -179,12 +181,13 @@ def vincular_livro(usuario_id:str, livro_id:str, dados:VinculoLivro, db: Session
 
 @app.get("/livros", response_model=List[Livro])
 def listar_livros(db: Session = Depends(get_db)):
-    usuarios = db.query(UsuarioDB).all()
-
-    if not usuarios:
-        raise HTTPException(status_code=404, detail="Nenhum usuário encontrado")
+    livros = db.query(LivroDB).all()
     
-    return usuarios
+    
+    if not livros:
+        raise HTTPException(status_code=404, detail="Nenhum livro encontrado")
+    
+    return livros
 
 @app.get("/livros/{id_livro}", response_model=Livro)
 def buscar_livro(id_livro: str, db: Session = Depends(get_db)):
@@ -243,6 +246,7 @@ def exibir_estante(id_usuario, db: Session = Depends(get_db)):
             "nota": item.avaliacao,
             "resenha": item.resenha
         })
+    return resposta
 
 @app.post ("/livros/{id_usuariolivro}/historico", response_model = ProgressoLivro, status_code=201)
 def registrar_progresso(id_usuariolivro:str, dados: ProgressoLivroEntrada, db: Session = Depends(get_db)):
@@ -362,13 +366,21 @@ def obter_dashboard(id_usuario: str, db: Session = Depends(get_db)):
     # 2. Query 1: Contar quantos livros estão como 'Lido' e quantos estão como 'Lendo'
     # Fazemos isso em uma única consulta rápida no banco
     metricas_livros = (
-        db.query(
-            func.count(func.distinct(func.case((UsuarioLivroDB.classificacao == 'Lido', UsuarioLivroDB.id_usuariolivro)))),
-            func.count(func.distinct(func.case((UsuarioLivroDB.classificacao == 'Lendo', UsuarioLivroDB.id_usuariolivro))))
+    db.query(
+        func.count(
+            case(
+                (UsuarioLivroDB.classificacao == "Lido", 1)
+            )
+        ),
+        func.count(
+            case(
+                (UsuarioLivroDB.classificacao == "Lendo", 1)
+            )
         )
-        .filter(UsuarioLivroDB.id_usuario == id_usuario)
-        .first()
     )
+    .filter(UsuarioLivroDB.id_usuario == id_usuario)
+    .first()
+)
     
     total_lidos = metricas_livros[0] or 0
     total_lendo = metricas_livros[1] or 0

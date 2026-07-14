@@ -6,11 +6,11 @@ from datetime import datetime
 class LivroEntrada(BaseModel):
     titulo: str
     autor: str
-    numeroPaginas: int
+    numero_paginas: int
     genero: str
 
 class Livro(LivroEntrada):
-    id: str
+    id_livro: str
 
 class VinculoLivro(LivroEntrada):
     classificacao: str
@@ -35,7 +35,8 @@ class UsuarioEntrada(BaseModel):
 class Usuario(BaseModel):
     nome: str
     email: str
-    id: str
+    id_usuario: str
+
 
 class AvaliacaoEntrada(BaseModel):
     nota: int
